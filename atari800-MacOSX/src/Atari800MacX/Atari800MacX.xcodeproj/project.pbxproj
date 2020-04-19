@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		02B57EE7244BACAD00DC182C /* uvsg_serial_data.h in Headers */ = {isa = PBXBuildFile; fileRef = 02B57EE5244BACAD00DC182C /* uvsg_serial_data.h */; };
+		02B57EE8244BACAD00DC182C /* uvsg_serial_data.c in Sources */ = {isa = PBXBuildFile; fileRef = 02B57EE6244BACAD00DC182C /* uvsg_serial_data.c */; };
 		2D003B9E21D70F5C003F6F94 /* Atari800Window.h in Headers */ = {isa = PBXBuildFile; fileRef = 2D003B9D21D70F5C003F6F94 /* Atari800Window.h */; };
 		2D013C8D10718EF8009D2E84 /* BreakpointDataSource.h in Headers */ = {isa = PBXBuildFile; fileRef = 2D013C8B10718EF8009D2E84 /* BreakpointDataSource.h */; };
 		2D013C8E10718EF8009D2E84 /* BreakpointDataSource.m in Sources */ = {isa = PBXBuildFile; fileRef = 2D013C8C10718EF8009D2E84 /* BreakpointDataSource.m */; };
@@ -383,6 +385,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		02B57EE5244BACAD00DC182C /* uvsg_serial_data.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = uvsg_serial_data.h; sourceTree = "<group>"; };
+		02B57EE6244BACAD00DC182C /* uvsg_serial_data.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = uvsg_serial_data.c; sourceTree = "<group>"; };
 		1058C7A1FEA54F0111CA2CBB /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = /System/Library/Frameworks/Cocoa.framework; sourceTree = "<absolute>"; };
 		29B97324FDCFA39411CA2CEA /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = /System/Library/Frameworks/AppKit.framework; sourceTree = "<absolute>"; };
 		29B97325FDCFA39411CA2CEA /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = /System/Library/Frameworks/Foundation.framework; sourceTree = "<absolute>"; };
@@ -925,6 +929,8 @@
 				F5558374030EF4CD01A8C8B4 /* atari.h */,
 				F5558372030EF4CD01A8C8B4 /* atari.c */,
 				F55583BD030EFF8001A8C8B4 /* atari_mac_sdl.c */,
+				02B57EE5244BACAD00DC182C /* uvsg_serial_data.h */,
+				02B57EE6244BACAD00DC182C /* uvsg_serial_data.c */,
 				F5558355030EF4CD01A8C8B4 /* binload.h */,
 				F5558356030EF4CD01A8C8B4 /* binload.c */,
 				F5558351030EF4CD01A8C8B4 /* cassette.h */,
@@ -1265,6 +1271,7 @@
 				2DAEDB4809B69AED005FF181 /* rdevice.h in Headers */,
 				2DDD844F0AAA01CC00DE182D /* KeyMapper.h in Headers */,
 				2D3A8F7D0CB3087200A18A29 /* xep80.h in Headers */,
+				02B57EE7244BACAD00DC182C /* uvsg_serial_data.h in Headers */,
 				2D432D940CB6CBCE009CAC77 /* xep80_fonts.h in Headers */,
 				2D2EAFF90DEE1E8100271295 /* pbi.h in Headers */,
 				2D2EB0080DEE1F9D00271295 /* votrax.h in Headers */,
@@ -1503,6 +1510,7 @@
 				2DAEDBB009B69AED005FF181 /* mac_screen.c in Sources */,
 				2DAEDBB209B69AED005FF181 /* MonitorWindow.m in Sources */,
 				2DAEDBB309B69AED005FF181 /* Atari800FunctionKeysWindow.m in Sources */,
+				02B57EE8244BACAD00DC182C /* uvsg_serial_data.c in Sources */,
 				2DAEDBC009B69AED005FF181 /* SectorEditorByteFieldCell.m in Sources */,
 				2D6A0BEB251C21050062B581 /* img_raw.c in Sources */,
 				2DE6EB7C24CE197000A55386 /* altirraos_800.c in Sources */,

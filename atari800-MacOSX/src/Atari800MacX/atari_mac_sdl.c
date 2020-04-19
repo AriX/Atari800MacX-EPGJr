@@ -80,6 +80,7 @@
 #include "side2.h"
 #include "util.h"
 #include "capslock.h"
+#include "uvsg_serial_data.h"
 
 /* Local variables that control the display and sound modes.  They need to be visable externally
    so the preferences and menu manager Objective-C files may access them. */
@@ -5307,6 +5308,14 @@ int SDL_main(int argc, char **argv)
     int i;
     int retVal;
 	double last_time = 0.0;
+    
+#define SERIAL_TCP_PORT 5541
+    UVSGSerialDataReceiver *receiver = UVSGSerialDataReceiverCreate();
+    UVSGSerialDataReceiverStart(receiver, SERIAL_TCP_PORT);
+    const UWORD ringBufferMemoryStartAddress = 0x3800;
+    const UWORD ringBufferMemoryPositionAddress = 0xc8;
+    const UWORD ringBufferSize = 2047;
+    UWORD ringBufferMemoryHeadOffset = 0;
 
     POKEYSND_stereo_enabled = FALSE; /* Turn this off here....otherwise games only come
                              from one channel...you only want this for demos mainly
@@ -5684,6 +5693,25 @@ int SDL_main(int argc, char **argv)
 			
 		AboutBoxScroll();
 		
+        UBYTE *receivedData = NULL;
+        size_t receivedDataSize = UVSGSerialDataReceiverReceiveData(receiver, (void **)&receivedData);
+        if (receivedDataSize > 0) {
+            for (int i = 0; i < receivedDataSize; i++) {
+                if (ringBufferMemoryHeadOffset > ringBufferSize)
+                    ringBufferMemoryHeadOffset = 0;
+
+                // Put the received data into the ring buffer
+                UBYTE receivedByte = receivedData[i];
+                MEMORY_PutByte((ringBufferMemoryStartAddress + ringBufferMemoryHeadOffset), receivedByte);
+
+                // Update the ring buffer head offset
+                ringBufferMemoryHeadOffset++;
+            }
+            
+            // Update the current address of the ring buffer
+            MEMORY_dPutWord(ringBufferMemoryPositionAddress, ringBufferMemoryHeadOffset);
+        }
+        
         }
     Atari800_Exit(FALSE);
     Log_flushlog();
