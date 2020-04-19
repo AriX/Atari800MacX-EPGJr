@@ -5312,10 +5312,9 @@ int SDL_main(int argc, char **argv)
 #define SERIAL_TCP_PORT 5541
     UVSGSerialDataReceiver *receiver = UVSGSerialDataReceiverCreate();
     UVSGSerialDataReceiverStart(receiver, SERIAL_TCP_PORT);
-    const UWORD ringBufferMemoryStartAddress = 0x3800;
-    const UWORD ringBufferMemoryPositionAddress = 0xc8;
-    const UWORD ringBufferSize = 2047;
-    UWORD ringBufferMemoryHeadOffset = 0;
+    UBYTE *serialBuffer = NULL;
+    size_t serialBufferSize = 0;
+    size_t serialBufferTail = 0;
 
     POKEYSND_stereo_enabled = FALSE; /* Turn this off here....otherwise games only come
                              from one channel...you only want this for demos mainly
@@ -5692,24 +5691,23 @@ int SDL_main(int argc, char **argv)
             done = TRUE;
 			
 		AboutBoxScroll();
-		
-        UBYTE *receivedData = NULL;
-        size_t receivedDataSize = UVSGSerialDataReceiverReceiveData(receiver, (void **)&receivedData);
-        if (receivedDataSize > 0) {
-            for (int i = 0; i < receivedDataSize; i++) {
-                if (ringBufferMemoryHeadOffset > ringBufferSize)
-                    ringBufferMemoryHeadOffset = 0;
-
-                // Put the received data into the ring buffer
-                UBYTE receivedByte = receivedData[i];
-                MEMORY_PutByte((ringBufferMemoryStartAddress + ringBufferMemoryHeadOffset), receivedByte);
-
-                // Update the ring buffer head offset
-                ringBufferMemoryHeadOffset++;
-            }
+        
+        // If we've finished writing out the current serial buffer, get more serial data from the network
+        if (serialBufferTail == serialBufferSize) {
+            serialBufferSize = UVSGSerialDataReceiverReceiveData(receiver, (void **)&serialBuffer);
+            serialBufferTail = 0;
+        }
+        
+        // If there's data pending in the buffer, write it out to serial
+        if (serialBufferTail < serialBufferSize) {
+            // Write a byte out to serial input
+            POKEY_SERIN = (char)serialBuffer[serialBufferTail];
             
-            // Update the current address of the ring buffer
-            MEMORY_dPutWord(ringBufferMemoryPositionAddress, ringBufferMemoryHeadOffset);
+            // Perform interrupt
+            POKEY_IRQST &= 0xdf;
+            CPU_GenerateIRQ();
+            
+            serialBufferTail++;
         }
         
         }

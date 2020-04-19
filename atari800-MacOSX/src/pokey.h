@@ -119,4 +119,6 @@ extern int POKEY_Base_mult[POKEY_MAXPOKEYS];	/* selects either 64Khz or 15Khz cl
 extern UBYTE POKEY_poly9_lookup[POKEY_POLY9_SIZE];
 extern UBYTE POKEY_poly17_lookup[16385];
 
+extern UBYTE POKEY_SERIN;
+
 #endif /* POKEY_H_ */
