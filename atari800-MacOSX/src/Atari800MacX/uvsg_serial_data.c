@@ -1,20 +1,27 @@
 //
 //  uvsg_serial_data.c
-//  Atari800MacX
+//  Atari800
 //
 //  Created by Ari on 4/18/20.
 //
 
 #include "uvsg_serial_data.h"
 #include <fcntl.h>
-#include <netinet/in.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/errno.h>
-#include <sys/socket.h>
 #include <unistd.h>
 
-#pragma mark - Platform-specific declarations
+#ifdef _WIN32
+#include <Ws2tcpip.h>
+#else
+#include <errno.h>
+#include <netdb.h>
+#include <sys/ioctl.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#endif
+
+// MARK: Platform-specific declarations
 
 #ifdef _WIN32
 typedef SOCKET UVSGSocket;
@@ -32,18 +39,14 @@ static int getUVSGSocketError(void) {
 #endif
 }
 
-#ifndef _WIN32
+#ifdef _WIN32
+#define EWOULDBLOCK WSAEWOULDBLOCK
+#define EAGAIN EWOULDBLOCK
+#else
 #define SOCKADDR_INET struct sockaddr_storage
 #endif
 
-#if SIZEOF_TCHAR == 1
-#define ADDRINFOW struct addrinfo
-#define PADDRINFOW struct addrinfo *
-#define GetAddrInfoW getaddrinfo
-#define FreeAddrInfoW freeaddrinfo
-#endif
-
-#pragma mark - Internal
+// MARK: Internal
 
 #define SERIAL_TCP_BUFFER_LENGTH 1024
 
@@ -61,7 +64,24 @@ struct UVSGSerialDataReceiver {
     char buffer[SERIAL_TCP_BUFFER_LENGTH];
 };
 
+static void UVSGInitializeSocketSupport(void) {
+    static bool initialized = false;
+    if (initialized)
+        return;
+    
+    // Perform Windows-specific initialization
+#ifdef _WIN32
+    static WSADATA wsadata;
+    if (WSAStartup(MAKEWORD(2, 2), &wsadata))
+        fprintf(stderr, "WSAStartup failed with error %d", WSAGetLastError());
+#endif
+
+    initialized = true;
+}
+
 static UVSGSocket UVSGCreateTCPSocket(int port) {
+    UVSGInitializeSocketSupport();
+
     // Create socket
     UVSGSocket tcpSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (tcpSocket == UVSG_SOCKET_INVALID) {
@@ -79,15 +99,20 @@ static UVSGSocket UVSGCreateTCPSocket(int port) {
     }
     
     // Set socket to non-blocking
+#ifdef _WIN32
+    u_long mode = 1;  // 1 to enable non-blocking socket
+    int status = ioctlsocket(tcpSocket, FIONBIO, &mode);
+#else
     int status = fcntl(tcpSocket, F_SETFL, fcntl(tcpSocket, F_GETFL, 0) | O_NONBLOCK);
-    if (status == -1) {
+#endif
+    if (status != 0) {
         fprintf(stderr, "uvsg_serial_data: fcntl(O_NONBLOCK) failed: %d", getUVSGSocketError());
         close(tcpSocket);
         return UVSG_SOCKET_INVALID;
     }
     
     // Bind socket to a port
-    struct sockaddr_in serverAddress = {};
+    struct sockaddr_in serverAddress = {0};
     serverAddress.sin_family = AF_INET;
     serverAddress.sin_port = htons(port);
     serverAddress.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -130,7 +155,7 @@ static void UVSGSerialDataReceiverAcceptConnection(UVSGSerialDataReceiver *recei
 }
 
 static size_t UVSGSerialDataReceiverReadFromConnection(UVSGSerialDataReceiver *receiver, void **receivedData) {
-    int byteCount = read(receiver->tcpConnection, receiver->buffer, SERIAL_TCP_BUFFER_LENGTH);
+    int byteCount = recv(receiver->tcpConnection, receiver->buffer, SERIAL_TCP_BUFFER_LENGTH, 0);
     if (byteCount < 0) {
         int error = getUVSGSocketError();
         
@@ -138,7 +163,7 @@ static size_t UVSGSerialDataReceiverReadFromConnection(UVSGSerialDataReceiver *r
         if (error == EAGAIN)
             return 0;
         
-        fprintf(stderr, "uvsg_serial_data: Error reading from socket: %d", error);
+        fprintf(stderr, "uvsg_serial_data: Error reading from socket: %d\n", error);
         return 0;
     }
     
@@ -154,7 +179,7 @@ static size_t UVSGSerialDataReceiverReadFromConnection(UVSGSerialDataReceiver *r
 }
 
 
-#pragma mark - Public interface
+// MARK: Public interface
 
 UVSGSerialDataReceiver *UVSGSerialDataReceiverCreate(void) {
     UVSGSerialDataReceiver *receiver = malloc(sizeof(UVSGSerialDataReceiver));
@@ -201,6 +226,7 @@ size_t UVSGSerialDataReceiverReceiveData(UVSGSerialDataReceiver *receiver, void 
     switch (receiver->connectionStatus) {
         case UVSGConnectionStatusStopped:
         case UVSGConnectionStatusError:
+        default:
             return 0;
         case UVSGConnectionStatusWaitingForConnection:
             UVSGSerialDataReceiverAcceptConnection(receiver);

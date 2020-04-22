@@ -1,6 +1,6 @@
 //
 //  uvsg_serial_data.h
-//  Atari800MacX
+//  Atari800
 //
 //  Created by Ari on 4/18/20.
 //
