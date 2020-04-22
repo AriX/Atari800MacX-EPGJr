@@ -80,7 +80,7 @@
 #include "side2.h"
 #include "util.h"
 #include "capslock.h"
-#include "uvsg_serial_data.h"
+#include "UVSGSerialData.h"
 
 /* Local variables that control the display and sound modes.  They need to be visable externally
    so the preferences and menu manager Objective-C files may access them. */

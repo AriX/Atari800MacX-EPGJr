@@ -1,34 +1,57 @@
 //
-//  uvsg_serial_data.c
-//  Atari800
+//  UVSGSerialData.c
+//  PrevuePackage
 //
 //  Created by Ari on 4/18/20.
 //
 
-#include "uvsg_serial_data.h"
+#include "UVSGSerialData.h"
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 #ifdef _WIN32
+#include <io.h>
 #include <Ws2tcpip.h>
 #else
+#include <arpa/inet.h>
 #include <errno.h>
 #include <netdb.h>
 #include <sys/ioctl.h>
 #include <sys/select.h>
 #include <sys/socket.h>
+#include <unistd.h>
 #endif
 
 // MARK: Platform-specific declarations
 
 #ifdef _WIN32
+
+/**
+ Windows declarations
+ */
 typedef SOCKET UVSGSocket;
-#define UVSG_SOCKET_INVALID INVALID_SOCKET
+#define close _close
+
+#ifndef EWOULDBLOCK
+#define EWOULDBLOCK WSAEWOULDBLOCK
+#define EAGAIN EWOULDBLOCK
+#define ECONNRESET WSAECONNRESET
+#endif
+
+#ifndef __MINGW32__
+typedef size_t ssize_t;
+#endif
+
 #else
+
+/**
+ POSIX declarations
+ */
 typedef int UVSGSocket;
-#define UVSG_SOCKET_INVALID -1
+#define SOCKADDR_INET struct sockaddr_storage
+#define INVALID_SOCKET -1
+
 #endif
 
 static int getUVSGSocketError(void) {
@@ -38,13 +61,6 @@ static int getUVSGSocketError(void) {
     return errno;
 #endif
 }
-
-#ifdef _WIN32
-#define EWOULDBLOCK WSAEWOULDBLOCK
-#define EAGAIN EWOULDBLOCK
-#else
-#define SOCKADDR_INET struct sockaddr_storage
-#endif
 
 // MARK: Internal
 
@@ -64,6 +80,10 @@ struct UVSGSerialDataReceiver {
     char buffer[SERIAL_TCP_BUFFER_LENGTH];
 };
 
+struct UVSGSerialDataSender {
+    UVSGSocket tcpSocket;
+};
+
 static void UVSGInitializeSocketSupport(void) {
     static bool initialized = false;
     if (initialized)
@@ -73,29 +93,35 @@ static void UVSGInitializeSocketSupport(void) {
 #ifdef _WIN32
     static WSADATA wsadata;
     if (WSAStartup(MAKEWORD(2, 2), &wsadata))
-        fprintf(stderr, "WSAStartup failed with error %d", WSAGetLastError());
+        fprintf(stderr, "UVSGSerialData: WSAStartup failed with error %d", WSAGetLastError());
 #endif
 
     initialized = true;
 }
 
-static UVSGSocket UVSGCreateTCPSocket(int port) {
+static UVSGSocket UVSGCreateTCPSocket(void) {
     UVSGInitializeSocketSupport();
 
     // Create socket
     UVSGSocket tcpSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (tcpSocket == UVSG_SOCKET_INVALID) {
-        fprintf(stderr, "uvsg_serial_data: TCP socket creation error: %d", getUVSGSocketError());
-        return UVSG_SOCKET_INVALID;
-    }
+    if (tcpSocket == INVALID_SOCKET)
+        fprintf(stderr, "UVSGSerialDataReceiver: TCP socket creation error: %d", getUVSGSocketError());
+    
+    return tcpSocket;
+}
+
+static UVSGSocket UVSGCreateTCPSocketForReceiving(int port) {
+    UVSGSocket tcpSocket = UVSGCreateTCPSocket();
+    if (tcpSocket == INVALID_SOCKET)
+        return tcpSocket;
     
     // Set reuse address option on socket
     int socketOptionValue = 1;
     int result = setsockopt(tcpSocket, SOL_SOCKET, SO_REUSEADDR, (char *)&socketOptionValue, sizeof(socketOptionValue));
     if (result < 0) {
-        fprintf(stderr, "uvsg_serial_data: setsockopt(SO_REUSEADDR) failed: %d", getUVSGSocketError());
+        fprintf(stderr, "UVSGSerialDataReceiver: setsockopt(SO_REUSEADDR) failed: %d", getUVSGSocketError());
         close(tcpSocket);
-        return UVSG_SOCKET_INVALID;
+        return INVALID_SOCKET;
     }
     
     // Set socket to non-blocking
@@ -106,9 +132,9 @@ static UVSGSocket UVSGCreateTCPSocket(int port) {
     int status = fcntl(tcpSocket, F_SETFL, fcntl(tcpSocket, F_GETFL, 0) | O_NONBLOCK);
 #endif
     if (status != 0) {
-        fprintf(stderr, "uvsg_serial_data: fcntl(O_NONBLOCK) failed: %d", getUVSGSocketError());
+        fprintf(stderr, "UVSGSerialDataReceiver: fcntl(O_NONBLOCK) failed: %d", getUVSGSocketError());
         close(tcpSocket);
-        return UVSG_SOCKET_INVALID;
+        return INVALID_SOCKET;
     }
     
     // Bind socket to a port
@@ -118,17 +144,17 @@ static UVSGSocket UVSGCreateTCPSocket(int port) {
     serverAddress.sin_addr.s_addr = htonl(INADDR_ANY);
     result = bind(tcpSocket, (struct sockaddr *)&serverAddress, sizeof(serverAddress));
     if (result < 0) {
-        fprintf(stderr, "uvsg_serial_data: bind() failed: %d", getUVSGSocketError());
+        fprintf(stderr, "UVSGSerialDataReceiver: bind() failed: %d", getUVSGSocketError());
         close(tcpSocket);
-        return UVSG_SOCKET_INVALID;
+        return INVALID_SOCKET;
     }
     
     // Make socket ready to accept connections
     result = listen(tcpSocket, 1);
     if (result < 0) {
-        fprintf(stderr, "uvsg_serial_data: listen() failed: %d\n", getUVSGSocketError());
+        fprintf(stderr, "UVSGSerialDataReceiver: listen() failed: %d\n", getUVSGSocketError());
         close(tcpSocket);
-        return UVSG_SOCKET_INVALID;
+        return INVALID_SOCKET;
     }
 
     return tcpSocket;
@@ -146,7 +172,7 @@ static void UVSGSerialDataReceiverAcceptConnection(UVSGSerialDataReceiver *recei
         if (error == EWOULDBLOCK)
             return;
         
-        fprintf(stderr, "uvsg_serial_data: accept() failed: %d\n", error);
+        fprintf(stderr, "UVSGSerialDataReceiver: accept() failed: %d\n", error);
         return;
     }
     
@@ -155,29 +181,28 @@ static void UVSGSerialDataReceiverAcceptConnection(UVSGSerialDataReceiver *recei
 }
 
 static size_t UVSGSerialDataReceiverReadFromConnection(UVSGSerialDataReceiver *receiver, void **receivedData) {
-    int byteCount = recv(receiver->tcpConnection, receiver->buffer, SERIAL_TCP_BUFFER_LENGTH, 0);
+    ssize_t byteCount = recv(receiver->tcpConnection, receiver->buffer, SERIAL_TCP_BUFFER_LENGTH, 0);
+    int error = getUVSGSocketError();
+
+    if (byteCount == 0 || (byteCount < 0 && error == ECONNRESET)) {
+        // Client disconnected
+        close(receiver->tcpConnection);
+        receiver->connectionStatus = UVSGConnectionStatusWaitingForConnection;
+        return 0;
+    }
+
     if (byteCount < 0) {
-        int error = getUVSGSocketError();
-        
         // No data is waiting
         if (error == EAGAIN)
             return 0;
         
-        fprintf(stderr, "uvsg_serial_data: Error reading from socket: %d\n", error);
-        return 0;
-    }
-    
-    if (byteCount == 0) {
-        // Client disconnected
-        close(receiver->tcpConnection);
-        receiver->connectionStatus = UVSGConnectionStatusWaitingForConnection;
+        fprintf(stderr, "UVSGSerialDataReceiver: Error reading from socket: %d\n", error);
         return 0;
     }
     
     *receivedData = receiver->buffer;
     return byteCount;
 }
-
 
 // MARK: Public interface
 
@@ -187,16 +212,17 @@ UVSGSerialDataReceiver *UVSGSerialDataReceiverCreate(void) {
     return receiver;
 }
 
-void UVSGSerialDataReceiverStart(UVSGSerialDataReceiver *receiver, int port) {
-    UVSGSocket socket = UVSGCreateTCPSocket(port);
+bool UVSGSerialDataReceiverStart(UVSGSerialDataReceiver *receiver, int port) {
+    UVSGSocket socket = UVSGCreateTCPSocketForReceiving(port);
     
-    if (socket == UVSG_SOCKET_INVALID) {
+    if (socket == INVALID_SOCKET) {
         receiver->connectionStatus = UVSGConnectionStatusError;
-        return;
+        return false;
     }
     
     receiver->connectionStatus = UVSGConnectionStatusWaitingForConnection;
     receiver->tcpSocket = socket;
+    return true;
 }
 
 void UVSGSerialDataReceiverStop(UVSGSerialDataReceiver *receiver) {
@@ -234,4 +260,46 @@ size_t UVSGSerialDataReceiverReceiveData(UVSGSerialDataReceiver *receiver, void 
         case UVSGConnectionStatusConnected:
             return UVSGSerialDataReceiverReadFromConnection(receiver, receivedData);
     }
+}
+
+UVSGSerialDataSender *UVSGSerialDataSenderCreate(const char *host, int port) {
+    UVSGSocket tcpSocket = UVSGCreateTCPSocket();
+    if (tcpSocket == INVALID_SOCKET)
+        return NULL;
+    
+    UVSGSerialDataSender *sender = malloc(sizeof(UVSGSerialDataSender));
+    sender->tcpSocket = tcpSocket;
+    
+    struct sockaddr_in serverAddress = {0};
+    serverAddress.sin_family = AF_INET;
+    serverAddress.sin_port = htons(port);
+    serverAddress.sin_addr.s_addr = inet_addr(host);
+
+    // Connect to the server
+    int result = connect(sender->tcpSocket, (struct sockaddr *)&serverAddress, sizeof(serverAddress));
+    if (result != 0) {
+        fprintf(stderr, "UVSGSerialData: connect() failed: %d\n", getUVSGSocketError());
+        return false;
+    }
+    
+    printf("UVSGSerialDataSender: Connected to server %s:%d\n", host, port);
+    
+    return sender;
+}
+
+void UVSGSerialDataSenderFree(UVSGSerialDataSender *sender) {
+    printf("UVSGSerialDataSender: Disconnecting\n");
+    
+    close(sender->tcpSocket);
+    free(sender);
+}
+
+bool UVSGSerialDataSenderSendData(UVSGSerialDataSender *sender, const void *data, size_t dataSize) {
+    ssize_t bytesWritten = send(sender->tcpSocket, data, dataSize, 0);
+    if (bytesWritten < 0) {
+        fprintf(stderr, "UVSGSerialDataSender: send() failed: %d\n", getUVSGSocketError());
+        return false;
+    }
+    
+    return true;
 }
